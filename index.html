@@ -1777,38 +1777,51 @@ ${notes ? `\n특히 말씀하신 "${notes}" 부분도 같이 신경 써드릴게
       </div>`);
     }
 
-    // 2. 영역 간 연결성 (학년 + 과목 데이터가 있을 때)
+    // 2. 교과 내 연계성 (현재 단원 → 같은 과목 상위 단계 연결) + 2개월 학습 예고
     if (grade && CURRICULUM_DATA[grade]) {
-      const subjectLinks = [];
       const gradeData = CURRICULUM_DATA[grade];
       const monthNow = selectedMonth;
+      const intraLinks = [];
 
-      // 각 과목 현재 단원 추출
-      const subjectCurrent = {};
+      const subjectIcons = { 국어:'📖', 수학:'📐', 사회:'🗺️', 과학:'🔬' };
+
       ['국어','수학','사회','과학'].forEach(subj => {
-        if (gradeData[subj]) {
-          const { current } = getCurrentUnit(gradeData[subj], monthNow);
-          subjectCurrent[subj] = current;
+        const units = gradeData[subj];
+        if (!units) return;
+        const { current, next } = getCurrentUnit(units, monthNow);
+
+        // 다음 2개월 단원 미리보기
+        const futureUnits = [];
+        for (let dm = 1; dm <= 2; dm++) {
+          const fm = ((monthNow - 1 + dm) % 12) + 1;
+          const { current: fc } = getCurrentUnit(units, fm);
+          if (fc && fc.unit !== current.unit && !futureUnits.find(u => u.unit === fc.unit)) {
+            futureUnits.push(fc);
+          }
         }
+
+        const icon = subjectIcons[subj] || '📚';
+        let link = `${icon} <strong>${subj} 교과 내 연계:</strong> 지금 <strong>"${current.unit}"</strong>에서 <em>${current.lesson}</em>을(를) 배우고 있는데, 이 내용은 `;
+
+        if (next) {
+          link += `다음 단원 <strong>"${next.unit}"</strong>의 기초 체력이 돼요. ${current.next_desc}`;
+        } else {
+          link += `이번 학기의 핵심 마무리 단원이에요. 탄탄히 잡으면 2학기 학습의 출발점이 됩니다.`;
+        }
+
+        if (futureUnits.length > 0) {
+          const preview = futureUnits.map(u => `<strong>"${u.unit}"</strong>`).join(' → ');
+          link += `<br><span style="font-size:11px;color:#718096">📅 앞으로 2개월 예고: ${preview}</span>`;
+        }
+
+        intraLinks.push(link);
       });
 
-      // 영어 ↔ 국어 연결
-      if (subjectCurrent['국어'] && hasCoursebook) {
-        subjectLinks.push(`📖 <strong>영어 ↔ 국어:</strong> 지금 국어에서 "${subjectCurrent['국어'].unit}" 단원을 배우고 있는데, 영어 코스북에서도 문장 구조와 어휘를 늘리고 있어요. 두 언어의 문장 읽기 능력이 서로를 강화해줘요. 국어 독해력이 올라가면 영어 지문 이해도 더 빨리 늘어요.`);
-      }
-      // 수학 ↔ 영어 리딩 연결
-      if (subjectCurrent['수학'] && hasReading) {
-        subjectLinks.push(`📐 <strong>수학 ↔ 영어 리딩:</strong> 지금 수학에서 "${subjectCurrent['수학'].unit}" 단원을 배우는데, 영어 리딩도 논리적 글 읽기 능력이 핵심이에요. 수학의 순서대로 풀기 능력이 영어 독해의 문단 구조 이해로 이어지거든요.`);
-      }
-      // 과학 ↔ 영어 리딩 (비문학)
-      if (subjectCurrent['과학'] && hasReading) {
-        subjectLinks.push(`🔬 <strong>과학 ↔ 영어 리딩:</strong> 과학에서 "${subjectCurrent['과학'].unit}"을 배우고 있는 이 시기에 영어 리딩의 설명문·비문학 지문 읽기 능력이 함께 발전하면, 수능 영어 비문학 독해에서 큰 강점이 돼요.`);
-      }
-
-      if (subjectLinks.length > 0) {
+      if (intraLinks.length > 0) {
         sections.push(`<div style="margin-bottom:12px">
-          <div style="font-size:12px;font-weight:700;color:#276749;margin-bottom:6px">🌐 ② 교과 간 연결성 (초${grade} · ${monthNow}월)</div>
-          ${subjectLinks.map(t => `<div style="font-size:12px;color:#2D3748;line-height:1.7;padding:7px 10px;background:#F0FFF4;border-left:3px solid #38A169;border-radius:0 6px 6px 0;margin-bottom:5px">${t}</div>`).join('')}
+          <div style="font-size:12px;font-weight:700;color:#276749;margin-bottom:5px">🔗 ② 교과 내 연계성 & 학습 예고 (초${grade} · ${monthNow}월)</div>
+          <div style="font-size:11px;color:#718096;margin-bottom:7px">지금 배우는 내용이 같은 과목의 상위 단계에서 어떻게 확장되는지, 앞으로 2개월간 배울 단원을 제시하세요</div>
+          ${intraLinks.map(t => `<div style="font-size:12px;color:#2D3748;line-height:1.8;padding:8px 11px;background:#F0FFF4;border-left:3px solid #38A169;border-radius:0 6px 6px 0;margin-bottom:6px">${t}</div>`).join('')}
         </div>`);
       }
     }
@@ -2026,15 +2039,28 @@ function renderObjections({ mode, cancelR, perf, grade }) {
     ];
   }
 
-  const html = objList.map(o => `
-    <div class="obj-item">
-      <div class="obj-q">${o.q}</div>
-      <div class="obj-a">${o.a}</div>
+  const accordionHtml = objList.map((o, i) => `
+    <div style="border:1px solid #E2E8F0;border-radius:10px;margin-bottom:8px;overflow:hidden">
+      <button type="button" onclick="
+        const ans=this.nextElementSibling;
+        const arrow=this.querySelector('.acc-arrow');
+        const isOpen=ans.style.display==='block';
+        ans.style.display=isOpen?'none':'block';
+        arrow.textContent=isOpen?'▼':'▲';
+        this.style.background=isOpen?'#F7FAFC':'#EBF4FF';
+      " style="width:100%;text-align:left;padding:11px 14px;background:#F7FAFC;border:none;cursor:pointer;display:flex;justify-content:space-between;align-items:center;font-size:13px;font-weight:700;color:#2D3748;line-height:1.4">
+        <span>${o.q}</span>
+        <span class="acc-arrow" style="color:#718096;font-size:11px;flex-shrink:0;margin-left:8px">▼</span>
+      </button>
+      <div style="display:none;padding:12px 14px;background:#fff;border-top:1px solid #E2E8F0;font-size:13px;color:#4A5568;line-height:1.7">
+        💬 ${o.a}
+      </div>
     </div>`).join('');
 
   document.getElementById('objections').innerHTML = `
-    <div class="section-title" style="margin-bottom:12px">❓ 예상 반론 & 대처</div>
-    <div class="obj-grid">${html}</div>`;
+    <div class="section-title" style="margin-bottom:8px">❓ 예상 반론 & 대처 (클릭하면 답변 확인)</div>
+    <div style="font-size:11px;color:var(--muted);margin-bottom:10px">상담 중 어머님이 이런 말씀을 하시면 아래 답변을 참고하세요</div>
+    ${accordionHtml}`;
 }
 
 /* ── 팁 ── */
